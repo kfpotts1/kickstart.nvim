@@ -168,6 +168,9 @@ vim.opt.scrolloff = 10
 vim.opt.hlsearch = true
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
+-- keymap to save the current buffer
+vim.keymap.set('n', '<leader>w', '<cmd>:w<CR>', { desc = '[W]rite the current buffer' })
+
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>e[', vim.diagnostic.goto_prev, { desc = '[E]rror: previous diagnostic message' })
 vim.keymap.set('n', '<leader>]', vim.diagnostic.goto_next, { desc = '[E]rror: to next diagnostic message' })
@@ -181,6 +184,9 @@ vim.keymap.set('n', '<leader>eq', vim.diagnostic.setloclist, { desc = '[E]rror: 
 -- NOTE: This won't work in all terminal emulators/tmux/etc. Try your own mapping
 -- or just use <C-\><C-n> to exit terminal mode
 vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
+
+-- Source the init.lua file
+vim.keymap.set('n', '<leader>ns', '<cmd>:luafile ~/.config/nvim/init.lua<CR>', { desc = '[N]vim [S]ource', noremap = true, silent = true })
 
 -- TIP: Disable arrow keys in normal mode
 -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
@@ -219,6 +225,36 @@ vim.keymap.set(
   ':let current_bufnr = bufnr("%")<bar>:bufdo bdelete<bar>:execute "buffer" current_bufnr<CR>',
   { noremap = true, silent = true, desc = '[P]anes: Close [O]ther buffers' }
 )
+
+-- Open a new empty buffer in a new pane.
+vim.keymap.set('n', '<leader>pe', '<cmd>:vnew<CR>', { desc = '[P]anes: [E]mpty new buffer' })
+
+-- close all buffers except those that are currently open in a window.
+-- NOTE: There may be multiple windows open - we want to keep any buffer that is open in a window.
+vim.keymap.set('n', '<leader>pB', function()
+  local windows = vim.api.nvim_list_wins()
+  local buffers_to_keep = {}
+
+  -- Add all buffers that are open in a window to the buffers_to_keep table
+  for _, window in ipairs(windows) do
+    local bufnr = vim.api.nvim_win_get_buf(window)
+    buffers_to_keep[bufnr] = true
+  end
+
+  -- Get a list of all buffers
+  local all_buffers = vim.api.nvim_list_bufs()
+
+  local buffers_closed = 0
+
+  -- Delete all buffers that are not in the buffers_to_keep table
+  for _, bufnr in ipairs(all_buffers) do
+    if not buffers_to_keep[bufnr] and vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_command('bdelete ' .. bufnr)
+      buffers_closed = buffers_closed + 1
+    end
+  end
+  vim.notify('Closed ' .. buffers_closed .. ' buffers.', vim.log.levels.INFO)
+end, { desc = '[P]anes: Close inactive [B]uffers' })
 
 -- Resize windows
 -- NOTE: Not namespaced with <leader> so that they can be used quickly.
@@ -299,20 +335,22 @@ vim.api.nvim_create_autocmd('TextYankPost', {
 --     end
 --   end,
 -- })
+-- NOTE: switched to newer version of tmux. Now can use the tmux.nvim plugin.
+--
 -- Use osc52 as the clipboard provider
-local function copy(lines, _)
-  require('osc52').copy(table.concat(lines, '\n'))
-end
-
-local function paste()
-  return { vim.fn.split(vim.fn.getreg '', '\n'), vim.fn.getregtype '' }
-end
-
-vim.g.clipboard = {
-  name = 'osc52',
-  copy = { ['+'] = copy, ['*'] = copy },
-  paste = { ['+'] = paste, ['*'] = paste },
-}
+-- local function copy(lines, _)
+--   require('osc52').copy(table.concat(lines, '\n'))
+-- end
+--
+-- local function paste()
+--   return { vim.fn.split(vim.fn.getreg '', '\n'), vim.fn.getregtype '' }
+-- end
+--
+-- vim.g.clipboard = {
+--   name = 'osc52',
+--   copy = { ['+'] = copy, ['*'] = copy },
+--   paste = { ['+'] = paste, ['*'] = paste },
+-- }
 
 -- NOTE: Override vim-sleuth's indent detection for cpp .h files
 vim.api.nvim_create_autocmd('FileType', {
@@ -324,6 +362,13 @@ vim.api.nvim_create_autocmd('FileType', {
       vim.opt.expandtab = true
       vim.opt.shiftwidth = 1
       vim.opt.tabstop = 1
+    end
+    -- also override for .cc files to use 2 spaces by default.
+    if vim.fn.expand '%:e' == 'cc' then
+      vim.b.sleuth_automatic = false
+      vim.opt.expandtab = true
+      vim.opt.shiftwidth = 2
+      vim.opt.tabstop = 2
     end
   end,
 })
@@ -420,6 +465,52 @@ require('lazy').setup({
     },
   },
 
+  {
+    'MeanderingProgrammer/render-markdown.nvim',
+    opts = {},
+    dependencies = { 'nvim-treesitter/nvim-treesitter', 'echasnovski/mini.nvim' }, -- if you use the mini.nvim suite
+    -- dependencies = { 'nvim-treesitter/nvim-treesitter', 'echasnovski/mini.icons' }, -- if you use standalone mini plugins
+    -- dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-tree/nvim-web-devicons' }, -- if you prefer nvim-web-devicons
+  },
+
+  {
+    'nvim-treesitter/nvim-treesitter-textobjects',
+    dependencies = {
+      'nvim-treesitter/nvim-treesitter',
+    },
+    config = function()
+      require('nvim-treesitter.configs').setup {
+        textobjects = {
+          select = {
+            enable = true,
+            lookahead = true,
+            keymaps = {
+              ['af'] = { '@function.outer', desc = 'Select outer function' },
+              ['if'] = { '@function.inner', desc = 'Select inner function' },
+              ['ac'] = { '@class.outer', desc = 'Select outer class' },
+              ['ic'] = { '@class.inner', desc = 'Select inner class' },
+              ['aa'] = { '@parameter.outer', desc = 'Select outer parameter' },
+              ['ia'] = { '@parameter.inner', desc = 'Select inner parameter' },
+              ['al'] = { '@loop.outer', desc = 'Select outer loop' },
+              ['il'] = { '@loop.inner', desc = 'Select inner loop' },
+              ['ab'] = { '@block.outer', desc = 'Select outer block' },
+              ['ib'] = { '@block.inner', desc = 'Select inner block' },
+              ['as'] = { '@statement.outer', desc = 'Select outer statement' },
+              ['is'] = { '@statement.inner', desc = 'Select inner statement' },
+            },
+            selection_modes = {
+              ['@parameter.outer'] = 'v', -- charwise
+              ['@function.outer'] = 'V', -- linewise
+              ['@class.outer'] = '<c-v>', -- blockwise
+            },
+          },
+        },
+      }
+    end,
+  },
+
+  'ThePrimeagen/vim-be-good', -- Vim game to improve your Vim skills
+
   -- leap for quick navigation
   -- https://github.com/ggandor/leap.nvim
   {
@@ -506,32 +597,92 @@ require('lazy').setup({
   { -- Useful plugin to show you pending keybinds.
     'folke/which-key.nvim',
     event = 'VimEnter', -- Sets the loading event to 'VimEnter'
-    config = function() -- This is the function that runs, AFTER loading
-      require('which-key').setup()
+    opts = {
+      icons = {
+        -- set icon mappings to true if you have a Nerd Font
+        mappings = vim.g.have_nerd_font,
+        -- If you are using a Nerd Font: set icons.keys to an empty table which will use the
+        -- default whick-key.nvim defined Nerd Font icons, otherwise define a string table
+        keys = vim.g.have_nerd_font and {} or {
+          Up = '<Up> ',
+          Down = '<Down> ',
+          Left = '<Left> ',
+          Right = '<Right> ',
+          C = '<C-…> ',
+          M = '<M-…> ',
+          D = '<D-…> ',
+          S = '<S-…> ',
+          CR = '<CR> ',
+          Esc = '<Esc> ',
+          ScrollWheelDown = '<ScrollWheelDown> ',
+          ScrollWheelUp = '<ScrollWheelUp> ',
+          NL = '<NL> ',
+          BS = '<BS> ',
+          Space = '<Space> ',
+          Tab = '<Tab> ',
+          F1 = '<F1>',
+          F2 = '<F2>',
+          F3 = '<F3>',
+          F4 = '<F4>',
+          F5 = '<F5>',
+          F6 = '<F6>',
+          F7 = '<F7>',
+          F8 = '<F8>',
+          F9 = '<F9>',
+          F10 = '<F10>',
+          F11 = '<F11>',
+          F12 = '<F12>',
+        },
+      },
 
       -- Document existing key chains
-      require('which-key').register {
-        ['<leader>c'] = { name = '[C]ode', _ = 'which_key_ignore' },
-        ['<leader>d'] = { name = '[D]ocument', _ = 'which_key_ignore' },
-        ['<leader>r'] = { name = '[R]ename', _ = 'which_key_ignore' },
-        ['<leader>s'] = { name = '[S]earch', _ = 'which_key_ignore' },
-        ['<leader>w'] = { name = '[W]orkspace', _ = 'which_key_ignore' },
-        ['<leader>t'] = { name = '[T]oggle', _ = 'which_key_ignore' },
-        ['<leader>h'] = { name = 'Git [H]unk', _ = 'which_key_ignore' },
-        ['<leader>a'] = { name = '[A]I: Copilot', _ = 'which_key_ignore' },
-        ['<leader>p'] = { name = '[P]anes', _ = 'which_key_ignore' },
-        ['<leader>b'] = { name = '[B]azel', _ = 'which_key_ignore' },
-        ['<leader>e'] = { name = '[E]rrors/diagnostics', _ = 'which_key_ignore' },
-        ['<leader>f'] = { name = '[F]iles/Harpoon', _ = 'which_key_ignore' },
-        ['<leader>l'] = { name = '[L]azyGit', _ = 'which_key_ignore' },
-        ['<leader>z'] = { name = '[Z]en Mode', _ = 'which_key_ignore' },
-      }
-      -- visual mode
-      require('which-key').register({
-        ['<leader>h'] = { 'Git [H]unk' },
-        ['<leader>a'] = { '[A]I: Copilot' },
-      }, { mode = 'v' })
-    end,
+      spec = {
+        { '<leader>c', group = '[C]ode', mode = { 'n', 'x' } },
+        { '<leader>d', group = '[D]ocument' },
+        { '<leader>r', group = '[R]ename' },
+        { '<leader>s', group = '[S]earch' },
+        -- { '<leader>w', group = '[W]orkspace' },
+        { '<leader>t', group = '[T]oggle' },
+        { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
+        { '<leader>a', group = '[A]I: Copilot', mode = { 'n', 'v' } },
+        { '<leader>p', group = '[P]anes' },
+        { '<leader>b', group = '[B]azel' },
+        { '<leader>e', group = '[E]rrors/diagnostics' },
+        { '<leader>f', group = '[F]iles/Harpoon' },
+        { '<leader>sm', group = '[S]earch Harpoon' },
+        { '<leader>l', group = '[L]azyGit' },
+        { '<leader>z', group = '[Z]en Mode' },
+        { '<leader>n', group = '[N]eovim' },
+      },
+    },
+    -- config = function() -- This is the function that runs, AFTER loading
+    --   require('which-key').setup()
+    --
+    --   -- Document existing key chains
+    --   require('which-key').register {
+    --     ['<leader>c'] = { name = '[C]ode', _ = 'which_key_ignore' },
+    --     ['<leader>d'] = { name = '[D]ocument', _ = 'which_key_ignore' },
+    --     ['<leader>r'] = { name = '[R]ename', _ = 'which_key_ignore' },
+    --     ['<leader>s'] = { name = '[S]earch', _ = 'which_key_ignore' },
+    --     -- ['<leader>w'] = { name = '[W]orkspace', _ = 'which_key_ignore' },
+    --     ['<leader>t'] = { name = '[T]oggle', _ = 'which_key_ignore' },
+    --     ['<leader>h'] = { name = 'Git [H]unk', _ = 'which_key_ignore' },
+    --     ['<leader>a'] = { name = '[A]I: Copilot', _ = 'which_key_ignore' },
+    --     ['<leader>p'] = { name = '[P]anes', _ = 'which_key_ignore' },
+    --     ['<leader>b'] = { name = '[B]azel', _ = 'which_key_ignore' },
+    --     ['<leader>e'] = { name = '[E]rrors/diagnostics', _ = 'which_key_ignore' },
+    --     ['<leader>f'] = { name = '[F]iles/Harpoon', _ = 'which_key_ignore' },
+    --     ['<leader>sm'] = { name = '[S]earch Harpoon', _ = 'which_key_ignore' },
+    --     ['<leader>l'] = { name = '[L]azyGit', _ = 'which_key_ignore' },
+    --     ['<leader>z'] = { name = '[Z]en Mode', _ = 'which_key_ignore' },
+    --     ['<leader>n'] = { name = '[N]eovim', _ = 'which_key_ignore' },
+    --   }
+    --   -- visual mode
+    --   require('which-key').register({
+    --     ['<leader>h'] = { 'Git [H]unk' },
+    --     ['<leader>a'] = { '[A]I: Copilot' },
+    --   }, { mode = 'v' })
+    -- end,
   },
 
   -- NOTE(kenny): Added bazel plugin. We'll see how this goes.
@@ -636,6 +787,7 @@ require('lazy').setup({
       local builtin = require 'telescope.builtin'
       vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
       vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
+      vim.keymap.set('n', '<leader>sv', builtin.commands, { desc = '[S]earch [V]im commands' })
       vim.keymap.set('n', '<leader>sf', function()
         -- include hidden files
         builtin.find_files { hidden = true }
@@ -671,16 +823,58 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sn', function()
         builtin.find_files { cwd = vim.fn.stdpath 'config' }
       end, { desc = '[S]earch [N]eovim files' })
+
+      -- Shortcut for searching all config system files in ~/.config/
+      vim.keymap.set('n', '<leader>sc', function()
+        builtin.find_files {
+          search_dirs = { '~/.config', '~/.bashrc', '~/.bash_aliases', '~/.blerc' },
+          -- cwd = '~/.config',
+          hidden = true,
+          file_ignore_patterns = {
+            'gcloud',
+            'google',
+            '.db',
+            '.tdb',
+            'pulse',
+            'gedit',
+            'ibus',
+            'evolution',
+            'nautilus',
+            'nvim/.git',
+            'enchant',
+            'goa',
+            'dconf',
+          },
+        }
+      end, { desc = '[S]earch [C]onfig files' })
     end,
   },
+  -- {
+  --   'ojroques/nvim-osc52',
+  --   config = function()
+  --     require('osc52').setup {
+  --       max_length = 0, -- 0 means no limit on text length
+  --       silent = false, -- shows message on osc52 command
+  --       trim = false, -- remove trailing whitespace
+  --       tmux_passthrough = true, -- send to tmux clipboard
+  --     }
+  --   end,
+  -- },
   {
-    'ojroques/nvim-osc52',
+    'aserowy/tmux.nvim',
     config = function()
-      require('osc52').setup {
-        max_length = 0, -- 0 means no limit on text length
-        silent = false, -- shows message on osc52 command
-        trim = false, -- remove trailing whitespace
-        tmux_passthrough = true, -- send to tmux clipboard
+      require('tmux').setup {
+        copy_sync = {
+          enable = true,
+          redirect_to_clipboard = true,
+          -- tmux_copy_mode = false,
+        },
+        navigation = {
+          enable_default_keybindings = true,
+        },
+        resize = {
+          enable_default_keybindings = true,
+        },
       }
     end,
   },
@@ -766,7 +960,7 @@ require('lazy').setup({
 
           -- Fuzzy find all the symbols in your current workspace.
           --  Similar to document symbols, except searches over your entire project.
-          map('<leader>ws', require('telescope.builtin').lsp_dynamic_workspace_symbols, '[W]orkspace [S]ymbols')
+          -- map('<leader>ws', require('telescope.builtin').lsp_dynamic_workspace_symbols, '[W]orkspace [S]ymbols')
 
           -- Rename the variable under your cursor.
           --  Most Language Servers support renaming across files, etc.
@@ -832,6 +1026,16 @@ require('lazy').setup({
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
         clangd = {},
+        clangd = {
+          filetypes = { 'c', 'cpp', 'objc', 'objcpp', 'cc', 'h' }, -- add or remove file types as needed
+          -- stop offset_encoding warnings, I keep seeing spam warnings that say:
+          -- warning: multiple different client offset_encodings detected for buffer, this is not supported yet
+          -- So this is to fix this issue:
+          cmd = {
+            'clangd',
+            '--offset-encoding=utf-16',
+          },
+        },
         -- ccls = {},
         -- gopls = {},
         pyright = {},
@@ -842,7 +1046,7 @@ require('lazy').setup({
         --    https://github.com/pmizio/typescript-tools.nvim
         --
         -- But for many setups, the LSP (`tsserver`) will work just fine
-        tsserver = {},
+        -- tsserver = {},
         --
 
         lua_ls = {
@@ -1044,21 +1248,37 @@ require('lazy').setup({
 
   -- NOTE: kenny: tried out another color scheme below - didn't like it as much.
   --
-  { -- You can easily change to a different colorscheme.
-    -- Change the name of the colorscheme plugin below, and then
-    -- change the command in the config to whatever the name of that colorscheme is.
-    --
-    -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'folke/tokyonight.nvim',
-    priority = 1000, -- Make sure to load this before all the other start plugins.
-    init = function()
-      -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
-
-      -- You can configure highlights by doing something like:
-      vim.cmd.hi 'Comment gui=none'
+  -- { -- You can easily change to a different colorscheme.
+  --   -- Change the name of the colorscheme plugin below, and then
+  --   -- change the command in the config to whatever the name of that colorscheme is.
+  --   --
+  --   -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
+  --   'folke/tokyonight.nvim',
+  --   priority = 1000, -- Make sure to load this before all the other start plugins.
+  --   init = function()
+  --     -- Load the colorscheme here.
+  --     -- Like many other themes, this one has different styles, and you could load
+  --     -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
+  --     vim.cmd.colorscheme 'tokyonight-night'
+  --
+  --     -- You can configure highlights by doing something like:
+  --     vim.cmd.hi 'Comment gui=none'
+  --   end,
+  -- },
+  {
+    'catppuccin/nvim',
+    name = 'catppuccin',
+    priority = 1000,
+    config = function()
+      vim.cmd 'colorscheme catppuccin'
+      require('catppuccin').setup {
+        flavour = 'mocha',
+        dim_inactive = {
+          enable = true,
+          shade = 'dark',
+          percentage = 0.15,
+        },
+      }
     end,
   },
 
@@ -1124,8 +1344,8 @@ require('lazy').setup({
         options = {
           icons_enabled = true,
           theme = 'auto',
-          component_separators = { left = '', right = '' },
-          section_separators = { left = '', right = '' },
+          component_separators = { left = '', right = '' },
+          section_separators = { left = '', right = '' },
           disabled_filetypes = {
             statusline = {},
             winbar = {},
@@ -1339,6 +1559,8 @@ require('lazy').setup({
   require 'plugins.copilot',
   -- Add Harpoon2 support
   require 'plugins.harpoon',
+  -- ChatGPT plugin setup.
+  require 'plugins.chatgpt',
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.

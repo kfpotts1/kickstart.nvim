@@ -78,6 +78,7 @@ return {
       question_header = '## User ',
       answer_header = '## Copilot ',
       error_header = '## Error ',
+      model = 'gpt-4o',
       separator = ' ', -- Separator to use in chat
       history_path = vim.g.copilot_history_dir,
       prompts = prompts,
