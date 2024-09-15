@@ -63,12 +63,13 @@ return {
       ---@diagnostic disable-next-line: missing-parameter
       harpoon.setup(options)
       local quick_keys = {
+        'y',
         'u',
         'i',
         'o',
         'p',
       }
-      for i = 1, 4 do
+      for i = 1, 5 do
         local key = quick_keys[i]
         local select_func = function()
           require('harpoon'):list():select(i)
